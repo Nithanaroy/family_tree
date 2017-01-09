@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width">
+    <title>Family Tree</title>
+    <style>
+    html,
+    body {
+        height: 100%;
+    }
+    
+    #wrapper {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+    }
+    
+    #graphContainer {
+        flex-grow: 1;
+        margin: 2em;
+        cursor: pointer;
+    }
+    
+    #controlsContainer {
+        margin: 1em;
+    }
+    
+    #detailsContainer {
+        position: absolute;
+        display: none;
+    }
+    </style>
+</head>
+
+<body>
+    <input type="hidden" id="forObservable">
+    <div id="wrapper">
+        <div id="graphContainer"></div>
+        <div id="controlsContainer">
+            <label>First Name:
+                <input type="text" id="fnameTextBox" value="Veranna Setty" />
+            </label>
+            <label>Last Name:
+                <input type="text" id="lnameTextBox" value="Grandhi" />
+            </label>
+            <label>DOB:
+                <input type="text" id="dobTextBox" value="1948-10-08" />
+            </label>
+            <button id="addNodeBtn">Add Child to: </button>
+        </div>
+        <div id="detailsContainer">
+            <p>Name: <span id="nodeNameValue"></span></p>
+        </div>
+    </div>
+    <script src="http://sigmajs.org/assets/js/sigma.min.js"></script>
+    <script src="./build/plugins/sigma.parsers.json.min.js"></script>
+    <script type="text/javascript">
+    var _changeEvent = new Event('change');
+    var elem = document.getElementById("forObservable");
+
+    class Observable {
+        constructor(cb, init = 0) {
+            var self = this;
+            this.val = init;
+            this.old = null;
+
+            elem.addEventListener('change', function(e) {
+                e.old = self.old;
+                e.new = self.val;
+                cb(e)
+            }, false);
+        }
+        get() {
+            return this.val;
+
+        }
+        set(val) {
+            this.old = this.val;
+            this.val = val;
+            if (this.old !== this.val) {
+                elem.dispatchEvent(_changeEvent);
+            }
+        }
+    }
+
+    (function(sigma) {
+        /**
+         * TODO: Add s.graph.addNode listener
+         * TODO: Add listener for node properties changed
+         */
+        var s = new sigma('graphContainer');
+        window.s = s;
+        var detailsContainer = document.getElementById("detailsContainer");
+        var nodeNameValue = document.getElementById("nodeNameValue");
+        var addNodeBtn = document.getElementById("addNodeBtn");
+        var graphContainer = document.getElementById("graphContainer");
+
+        var selectedNode = new Observable(selectedNodeChange, null);
+
+        getData();
+        s.graph.nodes().forEach(function(n) {
+            n.props = {
+                text: n.text,
+                size: n.size,
+                color: n.color,
+                x: n.x,
+                y: n.y
+            };
+        })
+
+        s.refresh();
+
+        function selectedNodeChange(e) {
+            if (e.old && e.old.id) {
+                e.old.color = e.old.props.color || "#000";
+            }
+            if (e.new && e.new.id != undefined) {
+                e.new.color = "#AAA";
+                addNodeBtn.innerText = `Add Child to: ${e.new.text}`;
+            }
+            s.refresh();
+        }
+
+        s.bind("overNode", function(r) {
+            detailsContainer.style.display = "block";
+            detailsContainer.style.top = `${r.data.captor.clientY}px`;
+            detailsContainer.style.left = `${r.data.captor.clientX}px`;
+            nodeNameValue.innerText = r.data.node.text;
+        });
+
+        s.bind("outNode", function(r) {
+            detailsContainer.style.display = "none";
+        });
+
+        s.bind("clickNode", function(r) {
+            console.log(`clicked ${r.data.node.text}`);
+            selectedNode.set(r.data.node);
+        });
+
+        s.bind("clickStage", function() {
+            selectedNode.set(null);
+        });
+
+        addNodeBtn.addEventListener("click", function() {
+            let nodeId = s.graph.nodes().length;
+            let edgeId = s.graph.edges().length;
+            let currentNode = selectedNode.get();
+
+            let [x, y] = relayoutChildren(s, currentNode)
+            s.graph.addNode({
+                id: nodeId,
+                size: 5,
+                color: "#000",
+                text: `${fnameTextBox.value} ${lnameTextBox.value}`,
+                data: {
+                    fname: fnameTextBox.value,
+                    lname: lnameTextBox.value,
+                    dob: dobTextBox.value
+                },
+                props: {},
+                x: x,
+                y: y
+            }).addEdge({
+                id: edgeId,
+                source: currentNode.id,
+                target: nodeId
+            });
+
+            s.refresh();
+        });
+        
+
+        /**
+         * Compute co-ordinates for new child node for this parent
+         * Also relayout existing children
+         * @param  {sigma} sigmajs instance 
+         * @param  {sigma.graph.node} parent 
+         * @return {[,]}        x and y co-rodinates of child node
+         */
+        function relayoutChildren(s, parent) {
+            let children = getOutAdjacent(s, parent);
+            if (children.length == 0) {
+                return [parent.x, parent.y + 1];
+            } else {
+                let newX = parent.x - parseInt((children.length + 1) / 2);
+                children.forEach(function(c) {
+                    c.x = c.props.x = newX;
+                    newX++;
+                });
+                return [newX, parent.y + 1];
+            }
+        }
+
+        /**
+         * Returns an array of nodes connected by out edges to current node
+         * @param  {sigma} sigmajs instance
+         * @param  {sigma.graph.node} node
+         */
+        function getOutAdjacent(s, node) {
+            return s.graph.edges().filter(e => e.source === node.id).map(e => s.graph.nodes(e.target));
+        }
+
+        function getData(dummy = false) {
+            if (dummy) {
+                for (var i = 0; i < 10; i++) {
+                    for (var j = 0; j < 10; j++) {
+                        s.graph.addNode({
+                            id: `n${i}${j}`,
+                            text: `n${i}${j}`,
+                            size: 5,
+                            color: "#000",
+                            x: i,
+                            y: j
+                        });
+                    };
+                };
+            }
+
+            s.graph.addNode({
+                id: 0,
+                text: `Family Tree`,
+                size: 5,
+                color: "#000",
+                x: 0,
+                y: 0
+            });
+        }
+    })(sigma);
+    </script>
+</body>
+
+</html>
