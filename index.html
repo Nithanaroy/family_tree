@@ -23,34 +23,58 @@
             cursor: pointer;
         }
 
-        #controlsContainer {
-            margin: 1em;
-        }
-
         #detailsContainer {
             position: absolute;
             display: none;
+            background: #FFF;
+            padding: 0.5em;
+            box-shadow: 1px 1px 5px #AAA;
+            border-radius: 7px;
+        }
+
+        #selectedNodeContainer {
+            display: none;
+            position: fixed;
+            top: 0;
+            right: 0;
+            margin: 1em;
+            border-left: 1px solid;
+            padding-left: 0.5em;
+        }
+
+        #selectedNodeForm label {
+            display: block;
+            margin-bottom: 0.5em;
         }
     </style>
 </head>
 
 <body>
 <input type="hidden" id="forObservable">
+<div style="display: none;" id="personNodeForm">
+    <label>First Name:
+        <input type="text" class="form-field fnameTextBox" value="Veranna Setty"/>
+    </label>
+    <label>Last Name:
+        <input type="text" class="form-field lnameTextBox" value="Grandhi"/>
+    </label>
+    <label>DOB:
+        <input type="text" class="form-field dobTextBox" value="1948-10-08"/>
+    </label>
+</div>
 <div id="wrapper">
     <div id="graphContainer"></div>
-    <div id="controlsContainer">
-        <label>First Name:
-            <input type="text" id="fnameTextBox" value="Veranna Setty"/>
-        </label>
-        <label>Last Name:
-            <input type="text" id="lnameTextBox" value="Grandhi"/>
-        </label>
-        <label>DOB:
-            <input type="text" id="dobTextBox" value="1948-10-08"/>
-        </label>
+    <div style="margin: 1em;">
+        <div id="newNodeForm" style="display: inline;"></div>
         <button id="addChildBtn">Add Child to:</button>
     </div>
     <div id="detailsContainer"></div>
+    <div id="selectedNodeContainer">
+        <div id="selectedNodeForm"></div>
+        <button style="margin: 1.5em auto 0 auto; display: block;">
+            Save Changes
+        </button>
+    </div>
 </div>
 <script src="http://sigmajs.org/assets/js/sigma.min.js"></script>
 <script type="text/javascript">
@@ -84,6 +108,22 @@
         }
     }
 
+    class Form {
+        static get(formRef, ...fieldClassNames) {
+            let fields = {};
+            fieldClassNames.forEach(f => {
+                fields[f] = formRef.querySelector(`.${f}`).value;
+            });
+            return fields;
+        };
+
+        static set(formRef, fields) {
+            for (let className in fields) {
+                formRef.querySelector(`.${className}`).value = fields[className];
+            }
+        };
+    }
+
     (function (sigma) {
         /**
          * TODO: Add s.graph.addNode listener
@@ -91,14 +131,20 @@
          *     Save X and Y to index
          * TODO: Add listener for node properties changed
          */
-        var s = new sigma('graphContainer');
+        let s = new sigma('graphContainer');
         window.s = s;
-        var detailsContainer = document.getElementById("detailsContainer");
-        var addChildBtn = document.getElementById("addChildBtn");
-        var graphContainer = document.getElementById("graphContainer");
+        let detailsContainer = document.getElementById("detailsContainer");
+        let personNodeForm = document.getElementById("personNodeForm");
+        let newNodeForm = document.getElementById("newNodeForm");
+        let selectedNodeForm = document.getElementById("selectedNodeForm");
+        let selectedNodeContainer = document.getElementById("selectedNodeContainer");
+        let addChildBtn = document.getElementById("addChildBtn");
 
-        var selectedNode = new Observable(selectedNodeChange, null);
+        let selectedNode = new Observable(selectedNodeChange, null);
         let posIndex = {}; // where each node is located
+
+        newNodeForm.innerHTML = personNodeForm.innerHTML;
+        selectedNodeForm.innerHTML = personNodeForm.innerHTML;
 
         getData();
         s.graph.nodes().forEach(function (n) {
@@ -122,8 +168,17 @@
             if (e.new && e.new.id != undefined) {
                 e.new.color = "#AAA";
                 addChildBtn.innerText = `Add Child to: ${e.new.text}`;
+                if (e.new.id !== 0) {
+                    selectedNodeContainer.style.display = "block";
+                    Form.set(selectedNodeForm, {
+                        "fnameTextBox": e.new.data.fname,
+                        "lnameTextBox": e.new.data.lname,
+                        "dobTextBox": e.new.data.dob
+                    });
+                }
             } else {
                 addChildBtn.innerText = "Add Child to:";
+                selectedNodeContainer.style.display = "none";
             }
             s.refresh();
         }
@@ -132,9 +187,9 @@
             if (r.data.node.id === 0)
                 return;
             detailsContainer.style.display = "block";
-            detailsContainer.style.top = `${r.data.captor.clientY}px`;
-            detailsContainer.style.left = `${r.data.captor.clientX}px`;
-            detailsContainer.innerHTML = `<strong>ID</strong>: ${r.data.node.data.id}<br /><strong>Name</strong>: ${r.data.node.data.fname} ${r.data.node.data.lname}<br /><strong>DOB</strong>: ${r.data.node.data.dob}`;
+            detailsContainer.style.top = `${r.data.captor.clientY + 10}px`;
+            detailsContainer.style.left = `${r.data.captor.clientX + 10}px`;
+            detailsContainer.innerHTML = `<strong>ID</strong>: ${r.data.node.id}<br /><strong>Name</strong>: ${r.data.node.data.fname} ${r.data.node.data.lname}<br /><strong>DOB</strong>: ${r.data.node.data.dob}`;
 //            detailsContainer.innerHTML = `<strong>Name</strong>: ${r.data.node.data.fname} ${r.data.node.data.lname}<br /><strong>DOB</strong>: ${r.data.node.data.dob}`;
         });
 
@@ -156,16 +211,18 @@
             let edgeId = s.graph.edges().length;
             let currentNode = selectedNode.get();
 
+            let values = Form.get(newNodeForm, "fnameTextBox", "lnameTextBox", "dobTextBox");
+
             let [x, y] = relayoutChildren(s, currentNode);
             s.graph.addNode({
                 id: nodeId,
                 size: 5,
                 color: "#000",
-                text: `${fnameTextBox.value} ${lnameTextBox.value}`,
+                text: `${values['fnameTextBox']} ${values['lnameTextBox']}`,
                 data: {
-                    fname: fnameTextBox.value,
-                    lname: lnameTextBox.value,
-                    dob: dobTextBox.value
+                    fname: values['fnameTextBox'],
+                    lname: values['lnameTextBox'],
+                    dob: values['dobTextBox']
                 },
                 props: {},
                 x: x,
